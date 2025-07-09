@@ -1,0 +1,26 @@
+#  ROS 2 build artifacts
+contact_detection_ws/build/
+contact_detection_ws/install/
+contact_detection_ws/log/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Ignore virtual environment (if any sneak in here by accident)
+venv/
+env/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore VS Code settings
+.vscode/
+
+# Ignore generated data files 
+contact_detection_ws/data/
+
+# Ignore colcon/ament ignore markers
+contact_detection_ws/**/AMENT_IGNORE
+contact_detection_ws/**/COLCON_IGNORE
