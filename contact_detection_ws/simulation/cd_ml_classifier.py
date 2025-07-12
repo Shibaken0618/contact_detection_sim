@@ -20,6 +20,9 @@ import joblib
 
 EPOCHS = 10
 BATCH_SIZE = 32
+DATA_FILE = "data/joint_data.csv"
+MODEL_PATH = "models/contact_detector.pth"
+SCALER_PATH = "models/scaler.pkl"
 
 
 class ContactDataset(Dataset):
@@ -53,7 +56,7 @@ class ContactClassifier(nn.Module):
 
 
 class ContactDetectionTrainer:
-    def __init__(self, data_file="data/joint_data.csv"):
+    def __init__(self, data_file=DATA_FILE):
         self.data_file = data_file
         self.model = None
         self.scaler = StandardScaler()
@@ -128,8 +131,8 @@ class ContactDetectionTrainer:
             train_losses.append(train_loss)
             test_losses.append(test_loss)
 
-            if epoch % 10 == 0:
-                print(f"Epoch {epoch}: Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}")
+            if epoch % 1 == 0:
+                print(f"Epoch {epoch+1}: Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}")
         
         return train_losses, test_losses
 
@@ -155,34 +158,73 @@ class ContactDetectionTrainer:
 
             return predictions, y_pred
 
-    def save_model():
-        os.makedirs("models", exist_ok=True)
 
-    def load_model():
-        pass
+    def save_model(self, model_path=MODEL_PATH, scaler_path=SCALER_PATH):
+        os.makedirs("models", exist_ok=True)
+        torch.save(self.model.state_dict(), model_path)
+        joblib.dump(self.scaler, scaler_path)
+        print("model and scaler saved")
+
+
+    def load_model(self, model_path=MODEL_PATH, scaler_path=SCALER_PATH):
+        self.scaler = joblib.load(scaler_path)
+        input_size = len(self.scaler.feature_names_in_) if hasattr(self.scaler, 'feature_names_in_') else 7*3
+        self.model = ContactClassifier(input_size).to(self.device)
+        self.model.load_state_dict(torch.load(model_path))
+        self.model.eval()
+        print("Model loaded.")
+
+    def predict_contact(self, joint_pos, joint_vel, joint_tor):
+        if self.model is None:
+            raise ValueError("Model not trained or loaded")
+
+        features = np.concatenate([joint_pos, joint_vel, joint_tor])
+        features_scaled = self.scaler.transform(features.reshape(1, -1))
+
+        with torch.no_grad():
+            features_tensor = torch.FloatTensor(features_scaled).to(self.device)
+            prediction = self.model(features_tensor).squeeze().cpu().numpy()
+        
+        return prediction
 
 
 def main():
     print("starting NN Training...")
 
     trainer = ContactDetectionTrainer()
-    X_train, X_test, y_train, y_test = trainer.preproces_data()
-    # print(len(X_train))
-    # print(len(X_test))
-    # print(len(y_train))
-    # print(len(y_test))
+    try:
+        X_train, X_test, y_train, y_test = trainer.preproces_data()
+        # print(len(X_train))
+        # print(len(X_test))
+        # print(len(y_train))
+        # print(len(y_test))
 
-    train_losses, test_losses = trainer.train_model(X_train, y_train, X_test, y_test)
-    print(train_losses[0])
-    print(test_losses[0])
+        train_losses, test_losses = trainer.train_model(X_train, y_train, X_test, y_test)
+        # print(train_losses[0])
+        # print(test_losses[0])
+        plt.figure(figsize=(10,5))
+        plt.plot(train_losses, label='Training Loss')
+        plt.plot(test_losses, label='Test Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.title('Training History')
+        plt.savefig('training_history.png')
+        plt.show()
 
-    print("\nTraining complete!")
 
-    predictions, y_pred = trainer.eval_model(X_test, y_test)
-    print(predictions[:5])
-    print(y_pred[:5])
+        print("\nTraining complete!")
 
-    print("\nModel saved, ready to use.")
+        predictions, y_pred = trainer.eval_model(X_test, y_test)
+        # print(predictions[:5])
+        # print(y_pred[:5])
+        trainer.save_model()
+
+        print("\nModel saved, ready to use.")
+    
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        print("Make sure to run the simulator script to generate training data")
 
 
 
