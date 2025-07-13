@@ -15,13 +15,32 @@ from sensor_msgs.msg import JointState
 from geometry_msgs.msg import WrenchStamped
 import joblib
 from typing import List, Optional
-from cd_ml_classifier import ContactClassifier
+# from cd_ml_classifier import ContactClassifier
 
 
 MODEL_PATH = "models/contact_detector.pth"
 SCALER_PATH = "models/scaler.pkl"
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+
+
+class ContactClassifier(nn.Module):
+    def __init__(self, input_size, hidden_size=64, dropout_rate=0.2):
+        super(ContactClassifier, self).__init__()
+        self.neuralNet = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(hidden_size, hidden_size//4),
+            nn.ReLU(),
+            nn.Linear(hidden_size//4, 1),
+            nn.Sigmoid()
+        )
+    
+    def forward(self, x):
+        return self.neuralNet(x)
+
 
 
 class ContactDetectorNode(Node):
@@ -62,7 +81,7 @@ class ContactDetectorNode(Node):
                 self.get_logger().error("Please train the model first.")
                 return False
             
-            self.scaler = joblib(self.scaler_path)
+            self.scaler = joblib.load(self.scaler_path)
             input_size = 7*3
             self.model = ContactClassifier(input_size).to(self.device)
             self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))
@@ -92,10 +111,10 @@ class ContactDetectorNode(Node):
 
     def publish_contact_state(self, contact_detected: bool, confidence: float):
         contact_msg = Bool()
-        contact_msg.data = contact_detected
+        contact_msg.data = bool(contact_detected)
         self.contact_pub.publish(contact_msg)
         confidence_msg = Float32()
-        confidence_msg.data = confidence
+        confidence_msg.data = float(confidence)
         self.confidence_pub.publish(confidence_msg)
         wrench_msg = WrenchStamped()
         wrench_msg.header.stamp = self.get_clock().now().to_msg()
@@ -113,7 +132,7 @@ class ContactDetectorNode(Node):
         
         try:
             joint_pos = np.array(self.last_joint_state.position[:self.num_joints])
-            joint_vel = np.array(self.last_joint_state.velocity[:self.num_joint]) if len(self.last_joint_state.velocity) > 0 else np.zeros(self.num_joints)
+            joint_vel = np.array(self.last_joint_state.velocity[:self.num_joints]) if len(self.last_joint_state.velocity) > 0 else np.zeros(self.num_joints)
             joint_tor = np.array(self.last_joint_state.effort[:self.num_joints]) if len(self.last_joint_state.effort) > 0 else np.zeros(self.num_joints)
 
             if len(joint_pos) != self.num_joints:
@@ -133,7 +152,7 @@ class ContactDetectorNode(Node):
                 self.get_logger.info(f"Contact detected with confidence {avg_confidence:.3f}.")
 
         except Exception as e:
-            self.get_logger().error("Error in contact detection.")
+            self.get_logger().error(f"Error in contact detection: {e}")
 
 
     def get_contact_stats(self) -> dict:
@@ -154,17 +173,65 @@ class ContactDetectorNode(Node):
 class ContactDetectorSimNode(Node):
     def __init__(self):
         super().__init__('contact_detector_sim')
+        self.joint_state_pub = self.create_publisher(JointState, '/joint_states', 10)
+        self.timer = self.create_timer(0.01, self.publish_joint_states)
+        self.time = 0.0
+        self.num_joints = 7
+        self.joint_names = [f"joint_{i}" for i in range(self.num_joints)]
+        self.contact_phase = False
+        self.contact_timer = 0.0
+        self.get_logger().info("Contact Detector Simulator Node initialized.")
+
+    def publish_joint_states(self):
+        msg = JointState()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.name = self.joint_names
         
+        positions = []
+        velocities = []
+        efforts = []
+
+        for i in range(self.num_joints):
+            freq = 0.5 + i * 0.1
+            amp = 0.5 + i * 0.1
+            pos = amp * np.sin(self.time * freq + i * 0.5)
+            vel = amp * freq * np.cos(self.time * freq + i * 0.5)
+
+            if self.contact_phase:
+                pos += np.random.normal(0, 0.05)
+                vel += np.random.normal(0, 0.1)
+                effort = np.random.normal(2.0, 0.5)
+            else:
+                effort = np.random.normal(0.1, 0.05)
+            
+            positions.append(pos)
+            velocities.append(vel)
+            efforts.append(effort)
+        
+        msg.position = positions
+        msg.velocity = velocities
+        msg.effort = efforts
+
+        self.joint_state_pub.publish(msg)
+
+        self.time += 0.01
+        self.contact_timer += 0.01
+
+        if self.contact_timer > 3.0:
+            self.contact_phase = not self.contact_phase
+            self.contact_timer = 0.0
+            phase_name = "CONTACT" if self.contact_phase else "FREE MOTION"
+            self.get_logger().info(f"Switching to {phase_name} phase")
 
 
 def main(args=None):
     rclpy.init(args=args)
     detector_node = ContactDetectorNode()
-    # add sim node
+    sim_node = ContactDetectorSimNode()
 
     executor = rclpy.executors.MultiThreadedExecutor()
     executor.add_node(detector_node)
-    # add sim node ot executor here
+    executor.add_node(sim_node)
     
     try:
         executor.spin()
@@ -172,7 +239,7 @@ def main(args=None):
         pass
     finally:
         detector_node.destroy_node()
-        # dont forget to destroy sim node
+        sim_node.destroy_node()
         rclpy.shutdown()
 
 
