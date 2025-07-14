@@ -2,7 +2,7 @@
 
 A machine learning-based contact detection system for surgical robotics, built with ROS2, PyBullet, and PyTorch. This project demonstrates real-time contact detection using joint state analysis with applications in robotic surgery.
 
-## 🎯 Project Overview
+<!-- ## 🎯 Project Overview
 
 This system addresses a critical challenge in surgical robotics: detecting unintended contact between robotic instruments and tissue. The project combines:
 
@@ -233,4 +233,4 @@ This project is developed for research and educational purposes. Please cite app
 
 ---
 
-*This project demonstrates advanced robotics concepts including physics simulation, machine learning, and real-time system integration - all highly relevant to surgical robotics applications.*
+*This project demonstrates advanced robotics concepts including physics simulation, machine learning, and real-time system integration - all highly relevant to surgical robotics applications.* -->
