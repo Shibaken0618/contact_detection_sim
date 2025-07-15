@@ -28,6 +28,8 @@ class SurgicalContactSimulator:
         self.physics_client = None
         self.robot_id = None
         self.plane_id = None
+        self.table_id = None
+        self.end_effector_id = None
 
         self.instruments = {}
         self.anatomy_objects = {}
@@ -50,8 +52,8 @@ class SurgicalContactSimulator:
         p.setTimeStep(1.0/240.)
 
         p.setPhysicsEngineParameter(enableConeFriction=1)
-        p.setPhysicsEngineParameter(numSolverIterations=10)
-        p.setPhysicsEngineParameter(numSubSteps=1)
+        p.setPhysicsEngineParameter(numSolverIterations=150)
+        p.setPhysicsEngineParameter(numSubSteps=4)
 
         self.plane_id = p.loadURDF("plane.urdf")
 
@@ -64,6 +66,7 @@ class SurgicalContactSimulator:
         self._setup_surgical_workspace()
         self._add_anatomical_structures()
         self._add_surgical_instruments()
+        self._attach_end_effector()
 
         print("Surgical environment setup complete.")
 
@@ -75,15 +78,15 @@ class SurgicalContactSimulator:
             baseMass = 0.0,
             baseCollisionShapeIndex = table_collision,
             baseVisualShapeIndex = table_visual,
-            basePosition = [0.4, 0, 0.08]
+            basePosition = [0.6, 0, 0.08]
         )
 
         if self.gui:
             p.resetDebugVisualizerCamera(
-                cameraDistance = 0.8,
+                cameraDistance = 1.2,
                 cameraYaw = 45,
                 cameraPitch = 30,
-                cameraTargetPosition = [0.4, 0, 0.2]
+                cameraTargetPosition = [0.5, 0, 0.2]
             )
 
 
@@ -91,94 +94,134 @@ class SurgicalContactSimulator:
         tissue_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.08, 0.05, 0.02])
         tissue_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.08, 0.05, 0.02], rgbaColor=[0.8, 0.4, 0.4, 0.9])
         self.anatomy_objects['tissue'] = p.createMultiBody(
-            baseMass = 0.1,
+            baseMass = 0.05,
             baseCollisionShapeIndex = tissue_collision,
             baseVisualShapeIndex = tissue_visual,
-            basePosition=[0.4, 0, 0.12]
+            basePosition=[0.6, 0, 0.12]
         )
 
         p.changeDynamics(self.anatomy_objects['tissue'], -1, 
                          lateralFriction=0.9, rollingFriction=0.1, restitution=0.1, 
-                         linearDamping=0.8, angularDamping=0.8, contactStiffness=1000, contactDamping=100)
+                         linearDamping=0.8, angularDamping=0.8, contactStiffness=500, contactDamping=50)
         
         organ_collision = p.createCollisionShape(p.GEOM_SPHERE, radius=0.03)
         organ_visual = p.createVisualShape(p.GEOM_SPHERE, radius=0.03, rgbaColor=[0.6, 0.3, 0.3, 0.9])
         self.anatomy_objects['organ'] = p.createMultiBody(
-            baseMass = 0.05,
+            baseMass = 0.02,
             baseCollisionShapeIndex = organ_collision,
             baseVisualShapeIndex = organ_visual,
-            basePosition = [0.3, 0.15, 0.13]
+            basePosition = [0.5, 0.15, 0.13]
         )
 
         p.changeDynamics(self.anatomy_objects['organ'], -1, 
-                         lateralFriction=0.8, spinningFriction=0.1, rollingFriction=0.1, restitution=0.1, 
-                         linearDamping=0.9, angularDamping=0.9, contactStiffness=800, contactDamping=80)
+                         lateralFriction=0.8, restitution=0.1, linearDamping=0.9, 
+                         angularDamping=0.9, contactStiffness=200, contactDamping=20)
 
         bone_collision = p.createCollisionShape(p.GEOM_CYLINDER, radius=0.015, height=0.08)
         bone_visual = p.createVisualShape(p.GEOM_CYLINDER, radius=0.015, length=0.08, rgbaColor=[0.9, 0.9, 0.8, 1])
         self.anatomy_objects['bone'] = p.createMultiBody(
-            baseMass = 0.2,
+            baseMass = 0.1,
             baseCollisionShapeIndex = bone_collision,
             baseVisualShapeIndex = bone_visual,
-            basePosition = [0.5, -0.1, 0.14]
+            basePosition = [0.7, -0.1, 0.14]
         )
 
         p.changeDynamics(self.anatomy_objects['bone'], -1,
-                         lateralFriction=0.6, spinningFriction=0.2, rollingFriction=0.2, restitution=0.2,
-                         linearDamping=0.5, angularDamping=0.5, contactStiffness=2000, contactDamping=200)
+                         lateralFriction=0.6, restitution=0.2, linearDamping=0.5, 
+                         angularDamping=0.5, contactStiffness=2000, contactDamping=200)
     
-        self._add_stability_constraints()
+        # self._add_stability_constraints()
+        print("Anatomical structures added to table")
 
-    def _add_stability_constraints(self):
-        for obj_name, obj_id in self.anatomy_objects.items():
-            constraint = p.createConstraint(
-                parentBodyUniqueId = self.table_id, parentLinkIndex=-1, childBodyUniqueId=obj_id, childLinkIndex=-1,
-                jointType=p.JOINT_POINT2POINT, jointAxis=[0,0,0], parentFramePosition=[0, 0, 0.5], childFramePosition=[0,0,0]
-            )
 
-            p.changeConstraint(constraint, maxForce=10.0)
-            self.constraints[obj_name] = constraint
+    # def _add_stability_constraints(self):
+    #     for obj_name, obj_id in self.anatomy_objects.items():
+    #         constraint = p.createConstraint(
+    #             parentBodyUniqueId = self.table_id, parentLinkIndex=-1, childBodyUniqueId=obj_id, childLinkIndex=-1,
+    #             jointType=p.JOINT_POINT2POINT, jointAxis=[0,0,0], parentFramePosition=[0, 0, 0.5], childFramePosition=[0,0,0]
+    #         )
+
+    #         p.changeConstraint(constraint, maxForce=10.0)
+    #         self.constraints[obj_name] = constraint
 
 
     def _add_surgical_instruments(self):
-        grasper_collision = p.createCollisionShape(p.GEOM_CYLINDER, radius=0.002, height=0.05)
-        grasper_visual = p.createVisualShape(p.GEOM_CYLINDER, radius=0.002, length=0.05, rgbaColor=[0.8, 0.8, 0.8, 1])
+        grasper_collision = p.createCollisionShape(p.GEOM_CYLINDER, radius=0.003, height=0.08)
+        grasper_visual = p.createVisualShape(p.GEOM_CYLINDER, radius=0.003, length=0.08, rgbaColor=[0.8, 0.8, 0.8, 1])
         self.instruments['grasper'] = p.createMultiBody(
-            baseMass = 0.005,
+            baseMass = 0.01,
             baseCollisionShapeIndex = grasper_collision,
             baseVisualShapeIndex = grasper_visual,
-            basePosition = [0.45, 0.1, 0.2]
+            basePosition = [0.2, 0.2, 0.15]
         )
 
-        scissors_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.001, 0.01, 0.025])
-        scissors_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.001, 0.01, 0.025], rgbaColor=[0.7, 0.7, 0.9, 1])
+        scissors_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.002, 0.015, 0.03])
+        scissors_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.002, 0.015, 0.03], rgbaColor=[0.7, 0.7, 0.9, 1])
         self.instruments['scissors'] = p.createMultiBody(
-            baseMass = 0.01,
+            baseMass = 0.015,
             baseCollisionShapeIndex = scissors_collision,
             baseVisualShapeIndex = scissors_visual,
-            basePosition = [0.35, 0.2, 0.2]
+            basePosition = [0.2, -0.2, 0.15]
         )
 
         for instrument_id in self.instruments.values():
-            p.changeDynamics(instrument_id, -1, lateralFriction=0.7, spinningFriction=0.1,
-                             rollingFriction=0.1, restitution=0.1, linearDamping=0.3, angularDamping=0.3)
+            p.changeDynamics(instrument_id, -1, lateralFriction=0.7,
+                             restitution=0.1, linearDamping=0.3, angularDamping=0.3)
+
+
+    def _attach_end_effector(self):
+        num_joints = p.getNumJoints(self.robot_id)
+        end_effector_link = num_joints - 1
+        probe_collision = p.createCollisionShape(p.GEOM_CYLINDER, radius=0.005, height=0.06)
+        probe_visual = p.createVisualShape(p.GEOM_CYLINDER, radius=0.005, length=0.06, rgbaColor=[0.5, 0.5, 0.8, 1])
+
+        end_effector_state = p.getLinkState(self.robot_id, end_effector_link)
+        end_effector_pos = end_effector_state[0]
+
+        probe_pos = [end_effector_pos[0], end_effector_pos[1], end_effector_pos[2] - 0.05]
+
+        self.end_effector_id = p.createMultiBody(
+            baseMass = 0.001,
+            baseCollisionShapeIndex = probe_collision,
+            baseVisualShapeIndex = probe_visual,
+            basePosition = probe_pos
+        )
+
+        self.end_effector_constraint = p.createConstraint(
+            parentBodyUniqueId = self.robot_id,
+            parentLinkIndex = end_effector_link,
+            childBodyUniqueId = self.end_effector_id,
+            childLinkIndex = -1,
+            jointType = p.JOINT_FIXED,
+            jointAxis = [0, 0, 0],
+            parentFramePosition = [0, 0, -0.05],
+            childFramePosition = [0, 0, 0]
+        )
+
+        print("End effector attached to robot")
 
 
     def detect_surgical_contact(self) -> List[SurgicalContact]:
         contacts = []
 
-        contact_points = p.getContactPoints(self.robot_id)
-        for contact in contact_points:
-            if len(contact) < 10:
-                continue
+        contact_sources = [self.robot_id]
+        if self.end_effector_id is not None:
+            contact_sources.append(self.end_effector_id)
 
-            bodyA, bodyB = contact[1], contact[2]
-            linkA, linkB = contact[3], contact[4]
-            contact_pos = contact[5]
-            contact_normal = contact[7]
-            normal_force = contact[9]
+        for source_id in contact_sources:
+            contact_points = p.getContactPoints(source_id)
 
-            contact_type = self._classify_contact(bodyB)
+            for contact in contact_points:
+                if len(contact) < 10:
+                    continue
+
+                bodyA, bodyB = contact[1], contact[2]
+                contact_pos = contact[5]
+                contact_normal = contact[7]
+                normal_force = contact[9]
+
+            other_body = bodyB if bodyA == source_id else bodyA
+            contact_type = self._classify_contact(other_body)
 
             if abs(normal_force) > self.contact_threshold:
                 surgical_contact = SurgicalContact(
@@ -204,9 +247,21 @@ class SurgicalContactSimulator:
             return 'instrument'
         elif body_id == self.table_id:
             return 'table'
+        elif body_id == self.plane_id:
+            return 'ground'
         else:
             return 'unknown'
         
+
+    def get_end_effector_position(self):
+        if self.end_effector_id is not None:
+            pos, _ = p.getBasePositionAndOrientation(self.end_effector_id)
+            return pos
+        else:
+            num_joints = p.getNumJoints(self.robot_id)
+            link_state = p.getLinkState(self.robot_id, num_joints-1)
+            return link_state[0]
+
 
     def execute_surgical_scenario(self, scenario_type: str="tissue_manipulation"):
         self.scenario_type = scenario_type
@@ -223,33 +278,36 @@ class SurgicalContactSimulator:
 
     def _tissue_manipulation_scenario(self):
         target_positions = [
-            [0.3, 0, 0.3],   # approach
-            [0.4, 0, 0.15],   # contact tissue
-            [0.4, 0.03, 0.15],   # manipulate
-            [0.4, -0.03, 0.15],   # continue manipulation
-            [0.3, 0, 0.3],   # retract
+            [0.3, 0, 0.4],   # start position
+            [0.6, 0, 0.4],   # move over table
+            [0.6, 0, 0.16],   # approach tissue
+            [0.6, 0, 0.14],   # contact tissue
+            [0.6, 0.05, 0.14],   # gentle manipulation
+            [0.6, -0.05, 0.14],   # continue manipulation
+            [0.6, 0, 0.14],   # return to center
+            [0.6, 0, 0.3],   # retract
         ]
 
-        return self._execute_waypoint_motion(target_positions)
+        return self._execute_waypoint_motion(target_positions, speed_factor=0.8)
     
 
     def _suturing_scenario(self):
         suture_points = []
-        for i in range(5):
-            x = 0.35 + i * 0.015
-            y = 0.015 * math.sin(i*math.pi / 2)
-            z = 0.14 + 0.005 * math.cos(i * math.pi / 2)
+        for i in range(6):
+            x = 0.55 + i * 0.02
+            y = 0.02 * math.sin(i*math.pi / 3)
+            z = 0.14
             suture_points.append([x, y, z])
 
-        return self._execute_waypoint_motion(suture_points, speed_factor=0.5)
+        return self._execute_waypoint_motion(suture_points, speed_factor=0.4)
     
 
     def _cutting_scenario(self):
         cut_points = []
-        for i in range(8):
-            x = 0.35 + i * 0.008
+        for i in range(10):
+            x = 0.55 + i * 0.01
             y = 0
-            z = 0.14
+            z = 0.14 + 0.005 * math.sin(i * math.pi / 2)
             cut_points.append([x, y, z])
         
         return self._execute_waypoint_motion(cut_points, speed_factor=0.3)
@@ -257,26 +315,30 @@ class SurgicalContactSimulator:
 
     def _default_scenario(self):
         return self._tissue_manipulation_scenario()
+    
 
     def _execute_waypoint_motion(self, waypoints: List[List[float]], speed_factor: float = 1.0):
         num_joints = p.getNumJoints(self.robot_id)
         joint_data = []
 
         for waypoint_idx, waypoint in enumerate(waypoints):
+            print(f"Moving to waypoint {waypoint_idx + 1} / {len(waypoints)}: {waypoint}")
+
             try:
                 joint_angles = p.calculateInverseKinematics(
                     self.robot_id,
                     num_joints - 1,
                     waypoint,
-                    maxNumIterations=100,
-                    residualThreshold=0.01
+                    maxNumIterations = 200,
+                    residualThreshold = 0.001,
+                    jointDamping=[0.1] * num_joints
                 )
             
             except:
                 print(f"IK failed for waypoint {waypoint}")
                 continue
             
-            steps = int(60 * speed_factor)
+            steps = int(120 * speed_factor)
             for step in range(steps):
                 for joint_idx in range(min(7, len(joint_angles))):
                     p.setJointMotorControl2(
@@ -284,8 +346,8 @@ class SurgicalContactSimulator:
                         joint_idx,
                         p.POSITION_CONTROL,
                         joint_angles[joint_idx],
-                        maxVelocity=0.5,
-                        force=50.0
+                        maxVelocity=0.3,
+                        force=30.0
                     )
                 
                 p.stepSimulation()
@@ -317,6 +379,10 @@ class SurgicalContactSimulator:
                         'timestamp' : time.time()
                     })
 
+                    if contact_detected:
+                        ee_pos = self.get_end_effector_position()
+                        print(f"Contact type: {contact_type}, Force: {contact_force:.3f}, EE: {ee_pos}")
+
                 if self.gui:
                     time.sleep(1.0 / 240.0)
         
@@ -334,7 +400,7 @@ class SurgicalContactSimulator:
 
         for scenario_idx in range(num_scenarios):
             scenario = scenarios[scenario_idx % len(scenarios)]
-            print(f"Executing {scenario} scenario {scenario_idx + 1} / {num_scenarios}")
+            print(f"\nExecuting {scenario} scenario {scenario_idx + 1} / {num_scenarios}")
 
             scenario_data = self.execute_surgical_scenario(scenario)
 
@@ -384,24 +450,34 @@ class SurgicalContactSimulator:
             print(f"\n--{scenario.upper()} SCENARIO ---")
             start_time = time.time()
 
-            while time.time() - start_time < scenario_duration:
-                scenario_data = self.execute_surgical_scenario(scenario)
+            scenario_data = self.execute_surgical_scenario(scenario)
 
-                contacts = [d for d in scenario_data if d['contact_detected']]
-                if contacts:
-                    avg_force = np.mean([c['contact_force'] for c in contacts])
-                    contact_types = set([c['contact_type'] for c in contacts])
-                    print(f"Contacts: {len(contacts)} Avg Force: {avg_force:.3f}, Types: {contact_types}")
+            contacts = [d for d in scenario_data if d['contact_detected']]
+            if contacts:
+                avg_force = np.mean([c['contact_force'] for c in contacts])
+                contact_types = set([c['contact_type'] for c in contacts])
+                print(f"Contacts: {len(contacts)}") 
+                print("Avg Force: {avg_force:.3f}") 
+                print("Types: {contact_types}")
+            else:
+                print("No contacts detected in this scenario")
 
         print("\n Surgical demo complete")
 
 
     def cleanup(self):
-        for constraint_id in self.constraints.values():
+        if hasattr(self, 'end_effector_constraint'):
             try:
-                p.removeConstraint(constraint_id)
+                p.removeConstraint(self.end_effector_constraint)
             except:
                 pass
+
+        for constraint_id in self.constraints.values():
+            try:
+                p.removeConstraint(self.end_effector_constraint)
+            except:
+                pass
+
         if self.physics_client is not None:
             p.disconnect()
 
@@ -412,10 +488,10 @@ def main():
 
     try:
         simulator.setup_surgical_environment()
-        simulator.run_surgical_demo(duration=20)
+        simulator.run_surgical_demo(duration=30)
 
         print("\nCollecting surgical training data ...")
-        simulator.collect_surgical_data(num_scenarios=10)
+        simulator.collect_surgical_data(num_scenarios=15)
 
     except KeyboardInterrupt:
         print("\nStopping simulation...")
