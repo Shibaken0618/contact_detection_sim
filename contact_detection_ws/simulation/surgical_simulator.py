@@ -35,7 +35,7 @@ class SurgicalContactSimulator:
         self.anatomy_objects = {}
         self.constraints = {}
 
-        self.contact_threshold = 0.02  # Reduced threshold for better detection
+        self.contact_threshold = 0.015  # Reduced threshold for better detection
         self.contact_history = []
 
         self.scenario_type = "tissue_manipulation"
@@ -96,48 +96,48 @@ class SurgicalContactSimulator:
         tissue_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.08, 0.06, 0.02])
         tissue_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.08, 0.06, 0.02], rgbaColor=[0.8, 0.4, 0.4, 0.9])
         self.anatomy_objects['tissue'] = p.createMultiBody(
-            baseMass=0.15,  # Moderate mass for soft tissue behavior
+            baseMass=0.1,  # Reduced mass for softer behavior
             baseCollisionShapeIndex=tissue_collision,
             baseVisualShapeIndex=tissue_visual,
             basePosition=[0.6, 0, 0.11],
-            baseOrientation=[0, 0, 0, 1]  # Ensure tissue starts perfectly flat
+            baseOrientation=[0, 0, 0, 1]
         )
 
-        # Soft tissue dynamics - can be compressed and moved but returns
+        # Softer tissue dynamics with stronger restoring force
         p.changeDynamics(self.anatomy_objects['tissue'], -1, 
-                        lateralFriction=2.5, rollingFriction=1.0, restitution=0.2, 
-                        linearDamping=0.9, angularDamping=0.9, 
-                        contactStiffness=300, contactDamping=30)  # Reduced stiffness/damping for softer contact
+                        lateralFriction=1.8, rollingFriction=0.8, restitution=0.3, 
+                        linearDamping=0.95, angularDamping=0.95, 
+                        contactStiffness=200, contactDamping=25)  # Reduced for softer contact
         
         # Organ positioned for better contact
         organ_collision = p.createCollisionShape(p.GEOM_SPHERE, radius=0.04)
         organ_visual = p.createVisualShape(p.GEOM_SPHERE, radius=0.04, rgbaColor=[0.6, 0.3, 0.3, 0.9])
         self.anatomy_objects['organ'] = p.createMultiBody(
-            baseMass=0.05,
+            baseMass=0.04,  # Slightly reduced mass
             baseCollisionShapeIndex=organ_collision,
             baseVisualShapeIndex=organ_visual,
             basePosition=[0.5, 0.15, 0.13]
         )
 
         p.changeDynamics(self.anatomy_objects['organ'], -1, 
-                        lateralFriction=1.5, restitution=0.1, 
-                        linearDamping=0.8, angularDamping=0.8, 
-                        contactStiffness=500, contactDamping=50)
+                        lateralFriction=1.3, restitution=0.15, 
+                        linearDamping=0.85, angularDamping=0.85, 
+                        contactStiffness=400, contactDamping=40)  # Reduced for softer contact
 
         # FIXED: Bone repositioned to avoid contact with tissue
-        bone_collision = p.createCollisionShape(p.GEOM_CYLINDER, radius=0.025, height=0.08)  # Slightly larger
+        bone_collision = p.createCollisionShape(p.GEOM_CYLINDER, radius=0.025, height=0.08)
         bone_visual = p.createVisualShape(p.GEOM_CYLINDER, radius=0.025, length=0.08, rgbaColor=[0.9, 0.9, 0.8, 1])
         self.anatomy_objects['bone'] = p.createMultiBody(
-            baseMass=0.3,  # Heavier for stability
+            baseMass=0.25,  # Reduced mass for better response
             baseCollisionShapeIndex=bone_collision,
             baseVisualShapeIndex=bone_visual,
-            basePosition=[0.45, -0.15, 0.13]  # Moved further away from tissue to avoid collision
+            basePosition=[0.45, -0.15, 0.13]
         )
 
         p.changeDynamics(self.anatomy_objects['bone'], -1,
-                        lateralFriction=1.0, restitution=0.2, 
-                        linearDamping=0.7, angularDamping=0.7, 
-                        contactStiffness=3000, contactDamping=300)
+                        lateralFriction=0.9, restitution=0.25, 
+                        linearDamping=0.8, angularDamping=0.8, 
+                        contactStiffness=2500, contactDamping=250)  # Reduced for softer contact
 
         # Add constraints to prevent objects from moving
         self._add_stability_constraints()
@@ -145,21 +145,35 @@ class SurgicalContactSimulator:
 
     def _add_stability_constraints(self):
         """Add constraints to keep anatomical objects stable but allow tissue deformation"""
-        # FIXED: Soft spring constraint for tissue - allows movement but returns to position
+        # FIXED: Stronger spring constraint for tissue with position restoration
         tissue_constraint = p.createConstraint(
             parentBodyUniqueId=self.table_id,
             parentLinkIndex=-1,
             childBodyUniqueId=self.anatomy_objects['tissue'],
             childLinkIndex=-1,
-            jointType=p.JOINT_POINT2POINT,  # Back to point2point for soft behavior
+            jointType=p.JOINT_POINT2POINT,
             jointAxis=[0, 0, 0],
             parentFramePosition=[0, 0, 0.05],
             childFramePosition=[0, 0, -0.02]
         )
-        p.changeConstraint(tissue_constraint, maxForce=8.0)  # Moderate spring force
+        p.changeConstraint(tissue_constraint, maxForce=15.0)  # Stronger restoring force
         self.constraints['tissue'] = tissue_constraint
 
-        # Constraint for organ (keep as-is since it's working)
+        # Additional angular constraint to prevent tissue rotation
+        tissue_angular_constraint = p.createConstraint(
+            parentBodyUniqueId=self.table_id,
+            parentLinkIndex=-1,
+            childBodyUniqueId=self.anatomy_objects['tissue'],
+            childLinkIndex=-1,
+            jointType=p.JOINT_FIXED,
+            jointAxis=[0, 0, 0],
+            parentFramePosition=[0, 0, 0.05],
+            childFramePosition=[0, 0, -0.02]
+        )
+        p.changeConstraint(tissue_angular_constraint, maxForce=8.0)  # Moderate angular restraint
+        self.constraints['tissue_angular'] = tissue_angular_constraint
+
+        # Stronger constraint for organ with better restoration
         organ_constraint = p.createConstraint(
             parentBodyUniqueId=self.table_id,
             parentLinkIndex=-1,
@@ -170,22 +184,36 @@ class SurgicalContactSimulator:
             parentFramePosition=[-0.1, 0.15, 0.07],
             childFramePosition=[0, 0, 0]
         )
-        p.changeConstraint(organ_constraint, maxForce=3.0)
+        p.changeConstraint(organ_constraint, maxForce=6.0)  # Stronger restoring force
         self.constraints['organ'] = organ_constraint
 
-        # FIXED: Bone constraint with updated position - further from tissue
+        # FIXED: Stronger bone constraint with position restoration
         bone_constraint = p.createConstraint(
             parentBodyUniqueId=self.table_id,
             parentLinkIndex=-1,
             childBodyUniqueId=self.anatomy_objects['bone'],
             childLinkIndex=-1,
-            jointType=p.JOINT_POINT2POINT,  # Allow slight movement for contact detection
+            jointType=p.JOINT_POINT2POINT,
             jointAxis=[0, 0, 0],
-            parentFramePosition=[-0.15, -0.15, 0.07],  # Updated to match new bone position
+            parentFramePosition=[-0.15, -0.15, 0.07],
             childFramePosition=[0, 0, 0]
         )
-        p.changeConstraint(bone_constraint, maxForce=20.0)  # Stronger but not fixed
+        p.changeConstraint(bone_constraint, maxForce=25.0)  # Much stronger restoring force
         self.constraints['bone'] = bone_constraint
+
+        # Additional angular constraint for bone to prevent rotation
+        bone_angular_constraint = p.createConstraint(
+            parentBodyUniqueId=self.table_id,
+            parentLinkIndex=-1,
+            childBodyUniqueId=self.anatomy_objects['bone'],
+            childLinkIndex=-1,
+            jointType=p.JOINT_FIXED,
+            jointAxis=[0, 0, 0],
+            parentFramePosition=[-0.15, -0.15, 0.07],
+            childFramePosition=[0, 0, 0]
+        )
+        p.changeConstraint(bone_angular_constraint, maxForce=15.0)  # Strong angular restraint
+        self.constraints['bone_angular'] = bone_angular_constraint
 
 
     def _add_surgical_instruments(self):
@@ -546,6 +574,7 @@ class SurgicalContactSimulator:
 
         print("\nSurgical demo complete!")
 
+
     def cleanup(self):
         if hasattr(self, 'end_effector_constraint'):
             try:
@@ -553,6 +582,7 @@ class SurgicalContactSimulator:
             except:
                 pass
 
+        # Clean up all constraints including new angular constraints
         for constraint_id in self.constraints.values():
             try:
                 p.removeConstraint(constraint_id)
