@@ -18,6 +18,7 @@ class ContactDetectionDemo:
         self.data_dir = self.base_dir / "data"
         self.models_dir = self.base_dir / "models"
         self.examples_dir = self.base_dir / "examples"
+        self.simulation_dir = self.base_dir / "simulation"
         
         # Create directories
         self.data_dir.mkdir(exist_ok=True)
@@ -105,7 +106,7 @@ class ContactDetectionDemo:
         
         # Collect basic data
         print("🤖 Collecting basic contact detection data...")
-        basic_script = self.examples_dir / "basic_simulator.py"
+        basic_script = self.simulation_dir / "basic_simulator.py"
         try:
             result = subprocess.run([sys.executable, str(basic_script)], 
                                   timeout=120)
@@ -118,7 +119,7 @@ class ContactDetectionDemo:
         
         # Collect surgical data
         print("🏥 Collecting surgical scenario data...")
-        surgical_script = self.examples_dir / "surgical_simulator.py"
+        surgical_script = self.simulaiton_dir / "surgical_simulator.py"
         try:
             result = subprocess.run([sys.executable, str(surgical_script)], 
                                   timeout=180)
@@ -149,7 +150,7 @@ class ContactDetectionDemo:
         
         # Train the model
         print("🔄 Training contact detection model...")
-        train_script = self.examples_dir / "train_contact_detector.py"
+        train_script = self.simulaiton_dir / "train_contact_detector.py"
         
         try:
             result = subprocess.run([sys.executable, str(train_script)], 
@@ -175,7 +176,7 @@ class ContactDetectionDemo:
         print("   - Simulating robot joint states")
         print("   - Press Ctrl+C to stop")
         
-        ros_script = self.examples_dir / "contact_detector_node.py"
+        ros_script = self.simulation_dir / "contact_detector_node.py"
         
         try:
             # Start ROS2 node
@@ -289,4 +290,43 @@ class ContactDetectionDemo:
     
     def cleanup(self):
         """Clean up running processes"""
-        for
+        for process in self.processes:
+            try:
+                if process.poll() is None:  # Process is still running
+                    process.terminate()
+                    process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            except Exception as e:
+                print(f"Warning: Could not clean up process: {e}")
+        
+        self.processes.clear()
+    
+    def signal_handler(self, sig, frame):
+        """Handle interrupt signals"""
+        print("\n🛑 Demo interrupted! Cleaning up...")
+        self.cleanup()
+        sys.exit(0)
+
+def main():
+    """Main entry point"""
+    demo = ContactDetectionDemo()
+    
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, demo.signal_handler)
+    signal.signal(signal.SIGTERM, demo.signal_handler)
+    
+    try:
+        if len(sys.argv) > 1 and sys.argv[1] == "--interactive":
+            demo.run_interactive_demo()
+        else:
+            demo.run_complete_demo()
+    except KeyboardInterrupt:
+        print("\n👋 Demo interrupted by user")
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+    finally:
+        demo.cleanup()
+
+if __name__ == "__main__":
+    main()
